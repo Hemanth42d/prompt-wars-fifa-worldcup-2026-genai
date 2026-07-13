@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: fifa-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - fifa-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: fifa-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - fifa-network
+
+  app:
+    build: .
+    container_name: fifa-app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://admin:password123@mongodb:27017/fifa_wc_2026?authSource=admin
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - fifa-network
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  mongodb_data:
+
+networks:
+  fifa-network:
+    driver: bridge
