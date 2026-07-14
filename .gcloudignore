@@ -1,6 +1,5 @@
 # Ignore node_modules
 node_modules/
-client/node_modules/
 
 # Ignore git files
 .git/
@@ -17,18 +16,7 @@ jest.config.js
 .env.development
 .env.test
 
-# Ignore client source (only need built files)
-client/src/
-client/public/
-client/index.html
-client/vite.config.js
-client/postcss.config.js
-client/tailwind.config.js
-client/.eslintrc.js
-client/package.json
-client/package-lock.json
-
-# Ignore documentation
+# Ignore documentation (except README)
 *.md
 !README.md
 
@@ -54,3 +42,5 @@ Dockerfile.dev
 # IMPORTANT: Keep these files for build
 !package.json
 !package-lock.json
+!client/
+!server/

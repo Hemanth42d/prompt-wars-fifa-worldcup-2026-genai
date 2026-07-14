@@ -61,6 +61,21 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Serve static files from React frontend build
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  const frontendPath = path.join(__dirname, '..', 'client', 'dist');
+  app.use(express.static(frontendPath));
+  
+  logger.info(`Serving static files from: ${frontendPath}`);
+}
+
 // Logging middleware
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
@@ -138,8 +153,8 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/navigation', navigationRoutes);
 app.use('/api/user', userRoutes);
 
-// Root endpoint with configuration status
-app.get('/', (req, res) => {
+// Root API endpoint (for API documentation)
+app.get('/api', (req, res) => {
   const configStatus = {
     mongodb: !!process.env.MONGODB_URI,
     redis: !!process.env.REDIS_URL,
@@ -177,11 +192,28 @@ app.get('/', (req, res) => {
   });
 });
 
-// 404 handler
-app.use((req, res) => {
+// Serve React frontend for all non-API routes (must be after API routes)
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    const indexPath = path.join(__dirname, '..', 'client', 'dist', 'index.html');
+    res.sendFile(indexPath, (err) => {
+      if (err) {
+        logger.error('Error serving index.html:', err);
+        res.status(500).json({
+          success: false,
+          message: 'Error loading application',
+          error: 'Frontend build not found. Please build the frontend first.'
+        });
+      }
+    });
+  });
+}
+
+// 404 handler for API routes only
+app.use('/api/*', (req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Endpoint not found'
+    message: 'API endpoint not found'
   });
 });
 
@@ -225,6 +257,16 @@ const startServer = async () => {
     if (process.env.MONGODB_URI) {
       try {
         await connectDB();
+        
+        // Seed demo user if database is connected
+        const { seedDemoUser } = await import('./utils/seedDemoUser.js');
+        const result = await seedDemoUser();
+        
+        if (result.created) {
+          logger.info('🎭 Demo user created: demo@fifawc2026.com / Demo@2026');
+        } else if (result.alreadyExists) {
+          logger.info('🎭 Demo user available: demo@fifawc2026.com / Demo@2026');
+        }
       } catch (error) {
         logger.warn('MongoDB connection failed, running without database:', error.message);
       }

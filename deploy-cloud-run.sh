@@ -40,8 +40,8 @@ read -p "Enter Redis URL (or press Enter to skip): " REDIS_URL
 read -p "Enter OpenAI API Key: " OPENAI_API_KEY
 read -p "Enter JWT Secret (min 32 chars): " JWT_SECRET
 
-# Build environment variables string
-ENV_VARS="NODE_ENV=production,PORT=8080"
+# Build environment variables string (NOTE: PORT is auto-set by Cloud Run, don't include it)
+ENV_VARS="NODE_ENV=production"
 ENV_VARS="$ENV_VARS,MONGODB_URI=$MONGODB_URI"
 ENV_VARS="$ENV_VARS,OPENAI_API_KEY=$OPENAI_API_KEY"
 ENV_VARS="$ENV_VARS,JWT_SECRET=$JWT_SECRET"
@@ -58,7 +58,7 @@ echo ""
 echo "🏗️  Building and deploying to Cloud Run..."
 echo ""
 
-# Deploy to Cloud Run
+# Deploy to Cloud Run (PORT is automatically set by Cloud Run)
 gcloud run deploy $SERVICE_NAME \
     --source . \
     --platform managed \

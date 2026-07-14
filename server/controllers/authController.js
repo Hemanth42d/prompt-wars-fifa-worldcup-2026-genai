@@ -3,27 +3,42 @@ import mongoose from 'mongoose';
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
 import AppError from '../utils/AppError.js';
+import { validateRegistrationData, sanitizeString } from '../utils/validators.js';
+import { sendSuccess, sendError, sendCreated, sendValidationError, sendConflict } from '../utils/responseHandler.js';
+import { AUTH_CONFIG, ERROR_MESSAGES, SUCCESS_MESSAGES, MONGOOSE_STATES, HTTP_STATUS } from '../constants/index.js';
 
-// Generate JWT Token
+/**
+ * Generate JWT Token
+ * @param {string} id - User ID
+ * @returns {string} JWT token
+ * @throws {Error} If JWT_SECRET is not configured
+ */
 const generateToken = (id) => {
   if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET is not configured');
   }
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '7d'
+    expiresIn: process.env.JWT_EXPIRE || AUTH_CONFIG.JWT_EXPIRE
   });
 };
 
-// Check database connection
+/**
+ * Check database connection status
+ * @throws {AppError} If database is not connected
+ */
 const checkDatabase = () => {
-  if (mongoose.connection.readyState !== 1) {
-    throw new AppError('Database service unavailable. Please try again later.', 503);
+  if (mongoose.connection.readyState !== MONGOOSE_STATES.CONNECTED) {
+    throw new AppError(ERROR_MESSAGES.DB_UNAVAILABLE, HTTP_STATUS.SERVICE_UNAVAILABLE);
   }
 };
 
-// @desc    Register user
-// @route   POST /api/auth/register
-// @access  Public
+/**
+ * Register new user
+ * @route   POST /api/auth/register
+ * @access  Public
+ * @param   {Object} req.body - User registration data
+ * @returns {Object} User data and authentication token
+ */
 export const register = async (req, res, next) => {
   try {
     // Check database connection
@@ -31,19 +46,26 @@ export const register = async (req, res, next) => {
 
     const { name, email, password, preferredLanguage, accessibility } = req.body;
 
+    // Validate input data
+    const validation = validateRegistrationData({ name, email, password });
+    if (!validation.isValid) {
+      return sendValidationError(res, validation.errors);
+    }
+
+    // Sanitize inputs
+    const sanitizedName = sanitizeString(name);
+    const sanitizedEmail = sanitizeString(email.toLowerCase());
+
     // Check if user exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email: sanitizedEmail });
     if (userExists) {
-      return res.status(400).json({
-        success: false,
-        message: 'User already exists with this email'
-      });
+      return sendConflict(res, ERROR_MESSAGES.USER_EXISTS);
     }
 
     // Create user
     const user = await User.create({
-      name,
-      email,
+      name: sanitizedName,
+      email: sanitizedEmail,
       password,
       preferredLanguage: preferredLanguage || 'en',
       accessibility: accessibility || {}
