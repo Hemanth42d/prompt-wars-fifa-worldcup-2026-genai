@@ -1,4 +1,5 @@
 import Chat from '../models/Chat.js';
+import mongoose from 'mongoose';
 import GenAIOrchestrator from '../services/genaiOrchestrator.js';
 import { getCache, setCache } from '../config/redis.js';
 import logger from '../utils/logger.js';
@@ -12,6 +13,16 @@ const orchestrator = new GenAIOrchestrator();
 // @access  Private
 export const sendMessage = async (req, res, next) => {
   try {
+    // Check if OpenAI is configured
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(503).json({
+        success: false,
+        error: 'Service configuration incomplete',
+        message: 'AI service is not configured. Please contact administrator.',
+        details: 'OPENAI_API_KEY environment variable is not set'
+      });
+    }
+
     const { message, context = {}, sessionId } = req.body;
     const userId = req.user._id;
 
@@ -42,23 +53,28 @@ export const sendMessage = async (req, res, next) => {
       userProfile
     );
 
-    // Find or create chat session
-    let chat = await Chat.findOne({ user: userId, sessionId: currentSessionId, isActive: true });
+    // Find or create chat session (only if MongoDB is connected)
+    let chat = null;
+    if (mongoose.connection.readyState === 1) {
+      chat = await Chat.findOne({ user: userId, sessionId: currentSessionId, isActive: true });
 
-    if (!chat) {
-      chat = await Chat.create({
-        user: userId,
-        sessionId: currentSessionId,
-        messages: [],
-        context
-      });
+      if (!chat) {
+        chat = await Chat.create({
+          user: userId,
+          sessionId: currentSessionId,
+          messages: [],
+          context
+        });
+      }
+
+      // Add user message
+      await chat.addMessage('user', message);
+
+      // Add assistant response
+      await chat.addMessage('assistant', response.message, response.metadata);
+    } else {
+      logger.warn('MongoDB not connected, skipping chat history save');
     }
-
-    // Add user message
-    await chat.addMessage('user', message);
-
-    // Add assistant response
-    await chat.addMessage('assistant', response.message, response.metadata);
 
     // Cache response (shorter TTL for dynamic data)
     await setCache(cacheKey, response, 60);

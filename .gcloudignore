@@ -1,0 +1,56 @@
+# Ignore node_modules
+node_modules/
+client/node_modules/
+
+# Ignore git files
+.git/
+.gitignore
+
+# Ignore test files
+tests/
+*.test.js
+jest.config.js
+
+# Ignore development files
+.env
+.env.local
+.env.development
+.env.test
+
+# Ignore client source (only need built files)
+client/src/
+client/public/
+client/index.html
+client/vite.config.js
+client/postcss.config.js
+client/tailwind.config.js
+client/.eslintrc.js
+client/package.json
+client/package-lock.json
+
+# Ignore documentation
+*.md
+!README.md
+
+# Ignore IDE files
+.vscode/
+.idea/
+
+# Ignore logs
+logs/
+*.log
+
+# Ignore Docker files
+docker-compose.yml
+Dockerfile.dev
+
+# Ignore CI/CD
+.github/
+
+# Ignore other config files
+.prettierrc
+.eslintrc.js
+
+# IMPORTANT: Keep these files for build
+!package.json
+!package-lock.json

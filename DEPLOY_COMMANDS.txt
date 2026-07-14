@@ -1,0 +1,249 @@
+# FIFA WORLD CUP 2026 - CLOUD RUN DEPLOYMENT COMMANDS
+# Copy and paste these commands one by one
+
+# =============================================================================
+# STEP 1: PREREQUISITES
+# =============================================================================
+
+# Check if gcloud is installed
+gcloud --version
+
+# If not installed, install it:
+curl https://sdk.cloud.google.com | bash
+exec -l $SHELL
+
+# Login to Google Cloud
+gcloud auth login
+
+# Set your project ID (replace YOUR_PROJECT_ID with actual project ID)
+gcloud config set project YOUR_PROJECT_ID
+
+# Enable required APIs
+gcloud services enable run.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+gcloud services enable containerregistry.googleapis.com
+
+# =============================================================================
+# STEP 2: PREPARE EXTERNAL SERVICES
+# =============================================================================
+
+# Get these ready before deployment:
+# 1. MongoDB Atlas URI: https://www.mongodb.com/cloud/atlas
+#    Format: mongodb+srv://username:password@cluster.mongodb.net/fifa-wc
+#
+# 2. OpenAI API Key: https://platform.openai.com/api-keys
+#    Format: sk-...
+#
+# 3. Generate JWT Secret (at least 32 characters):
+#    Run: openssl rand -base64 32
+
+# =============================================================================
+# STEP 3: DEPLOY TO CLOUD RUN (Choose ONE method)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# METHOD A: Using Deployment Script (EASIEST - RECOMMENDED)
+# -----------------------------------------------------------------------------
+
+chmod +x deploy-cloud-run.sh
+./deploy-cloud-run.sh
+
+# The script will prompt you for:
+# - MongoDB URI
+# - Redis URL (optional)
+# - OpenAI API Key
+# - JWT Secret
+
+# -----------------------------------------------------------------------------
+# METHOD B: Manual One-Line Deploy
+# -----------------------------------------------------------------------------
+
+# Replace the placeholder values with your actual values:
+gcloud run deploy fifa-wc-assistant \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --memory 2Gi \
+  --cpu 2 \
+  --min-instances 0 \
+  --max-instances 100 \
+  --timeout 300 \
+  --set-env-vars "NODE_ENV=production,PORT=8080,MONGODB_URI=YOUR_MONGODB_URI,OPENAI_API_KEY=YOUR_OPENAI_KEY,JWT_SECRET=YOUR_JWT_SECRET,DEFAULT_MODEL=gpt-4-turbo-preview,MAX_TOKENS=1000,TEMPERATURE=0.7,JWT_EXPIRE=7d"
+
+# -----------------------------------------------------------------------------
+# METHOD C: Using Docker (Advanced)
+# -----------------------------------------------------------------------------
+
+# Get your project ID
+PROJECT_ID=$(gcloud config get-value project)
+
+# Build Docker image
+docker build -t gcr.io/$PROJECT_ID/fifa-wc-assistant:latest .
+
+# Authenticate Docker with GCR
+gcloud auth configure-docker
+
+# Push to Google Container Registry
+docker push gcr.io/$PROJECT_ID/fifa-wc-assistant:latest
+
+# Deploy from container image
+gcloud run deploy fifa-wc-assistant \
+  --image gcr.io/$PROJECT_ID/fifa-wc-assistant:latest \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --memory 2Gi \
+  --cpu 2 \
+  --min-instances 0 \
+  --max-instances 100 \
+  --timeout 300
+
+# Then set environment variables
+gcloud run services update fifa-wc-assistant \
+  --region us-central1 \
+  --update-env-vars "NODE_ENV=production" \
+  --update-env-vars "PORT=8080" \
+  --update-env-vars "MONGODB_URI=YOUR_MONGODB_URI" \
+  --update-env-vars "OPENAI_API_KEY=YOUR_OPENAI_KEY" \
+  --update-env-vars "JWT_SECRET=YOUR_JWT_SECRET" \
+  --update-env-vars "DEFAULT_MODEL=gpt-4-turbo-preview"
+
+# =============================================================================
+# STEP 4: VERIFY DEPLOYMENT
+# =============================================================================
+
+# Get your service URL
+gcloud run services describe fifa-wc-assistant \
+  --region us-central1 \
+  --format 'value(status.url)'
+
+# Test health endpoint (replace URL with your actual URL)
+curl https://fifa-wc-assistant-xxxxx-uc.a.run.app/health
+
+# View logs
+gcloud run services logs tail fifa-wc-assistant --region us-central1
+
+# =============================================================================
+# TROUBLESHOOTING COMMANDS
+# =============================================================================
+
+# If deployment fails, check build logs
+gcloud builds list --limit 5
+
+# Get detailed build log (replace BUILD_ID with actual ID from above)
+gcloud builds log BUILD_ID
+
+# View service details
+gcloud run services describe fifa-wc-assistant --region us-central1
+
+# Test Docker build locally before deploying
+docker build -t test-build .
+
+# Test Docker container locally
+docker run -p 8080:8080 \
+  -e NODE_ENV=production \
+  -e PORT=8080 \
+  -e MONGODB_URI=your-uri \
+  -e OPENAI_API_KEY=your-key \
+  -e JWT_SECRET=your-secret \
+  test-build
+
+# =============================================================================
+# USEFUL MANAGEMENT COMMANDS
+# =============================================================================
+
+# List all Cloud Run services
+gcloud run services list --region us-central1
+
+# Update environment variable
+gcloud run services update fifa-wc-assistant \
+  --region us-central1 \
+  --update-env-vars "KEY=new-value"
+
+# Scale configuration
+gcloud run services update fifa-wc-assistant \
+  --region us-central1 \
+  --memory 1Gi \
+  --cpu 1 \
+  --min-instances 0 \
+  --max-instances 50
+
+# View revisions
+gcloud run revisions list --service fifa-wc-assistant --region us-central1
+
+# Delete service (if needed)
+gcloud run services delete fifa-wc-assistant --region us-central1
+
+# =============================================================================
+# MONGODB ATLAS SETUP (if needed)
+# =============================================================================
+
+# 1. Go to: https://www.mongodb.com/cloud/atlas
+# 2. Sign up / Login
+# 3. Create a FREE cluster (M0)
+# 4. Create database user (Database Access)
+# 5. Whitelist IP: 0.0.0.0/0 (Network Access)
+# 6. Get connection string: Connect → Drivers → Node.js
+# 7. Replace <password> with your actual password
+# 8. Replace myFirstDatabase with "fifa-wc"
+
+# =============================================================================
+# GENERATE SECURE JWT SECRET
+# =============================================================================
+
+# Generate a secure random secret (at least 32 characters)
+openssl rand -base64 32
+
+# Or use Node.js
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+
+# =============================================================================
+# COST MONITORING
+# =============================================================================
+
+# View billing information
+gcloud billing projects describe $(gcloud config get-value project)
+
+# Set budget alerts (optional)
+# Go to: https://console.cloud.google.com/billing/budgets
+
+# =============================================================================
+# SUCCESS INDICATORS
+# =============================================================================
+
+# If deployment is successful, you'll see:
+# ✅ "Service [fifa-wc-assistant] revision [xxx] has been deployed"
+# ✅ "Service URL: https://fifa-wc-assistant-xxxxx-uc.a.run.app"
+# ✅ Health check returns: {"status":"healthy"}
+
+# =============================================================================
+# NEXT STEPS AFTER SUCCESSFUL DEPLOYMENT
+# =============================================================================
+
+# 1. Save your service URL
+# 2. Test all API endpoints
+# 3. Update your GitHub repository README with the live URL
+# 4. Add the live URL to your competition submission
+# 5. Monitor logs for any issues
+
+# =============================================================================
+# QUICK REFERENCE
+# =============================================================================
+
+# Deploy:     gcloud run deploy fifa-wc-assistant --source . --region us-central1
+# Get URL:    gcloud run services describe fifa-wc-assistant --region us-central1 --format 'value(status.url)'
+# Logs:       gcloud run services logs tail fifa-wc-assistant --region us-central1
+# Update:     gcloud run services update fifa-wc-assistant --region us-central1 --update-env-vars "KEY=value"
+
+# =============================================================================
+# SUPPORT
+# =============================================================================
+
+# Cloud Run Documentation: https://cloud.google.com/run/docs
+# Troubleshooting Guide: https://cloud.google.com/run/docs/troubleshooting
+# Pricing Calculator: https://cloud.google.com/products/calculator
+
+# =============================================================================
+# END OF DEPLOYMENT COMMANDS
+# =============================================================================

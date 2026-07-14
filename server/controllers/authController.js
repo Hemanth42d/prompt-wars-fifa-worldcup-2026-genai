@@ -1,13 +1,24 @@
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
 import AppError from '../utils/AppError.js';
 
 // Generate JWT Token
 const generateToken = (id) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is not configured');
+  }
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE || '7d'
   });
+};
+
+// Check database connection
+const checkDatabase = () => {
+  if (mongoose.connection.readyState !== 1) {
+    throw new AppError('Database service unavailable. Please try again later.', 503);
+  }
 };
 
 // @desc    Register user
@@ -15,6 +26,9 @@ const generateToken = (id) => {
 // @access  Public
 export const register = async (req, res, next) => {
   try {
+    // Check database connection
+    checkDatabase();
+
     const { name, email, password, preferredLanguage, accessibility } = req.body;
 
     // Check if user exists

@@ -71,14 +71,65 @@ if (process.env.NODE_ENV === 'development') {
 // Rate limiting
 app.use(rateLimiter);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({
+// Health check endpoint with service status
+app.get('/health', async (req, res) => {
+  const health = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV
-  });
+    environment: process.env.NODE_ENV || 'development',
+    services: {
+      server: 'running',
+      mongodb: 'unknown',
+      redis: 'unknown',
+      openai: 'unknown'
+    },
+    warnings: []
+  };
+
+  // Check MongoDB connection
+  try {
+    if (mongoose.connection.readyState === 1) {
+      health.services.mongodb = 'connected';
+    } else if (mongoose.connection.readyState === 0) {
+      health.services.mongodb = 'disconnected';
+      health.warnings.push('MongoDB is not connected. Database features unavailable.');
+    } else if (mongoose.connection.readyState === 2) {
+      health.services.mongodb = 'connecting';
+    }
+  } catch (error) {
+    health.services.mongodb = 'error';
+    health.warnings.push('MongoDB check failed');
+  }
+
+  // Check Redis connection
+  try {
+    const { redisClient } = await import('./config/redis.js');
+    if (redisClient && redisClient.isOpen) {
+      health.services.redis = 'connected';
+    } else {
+      health.services.redis = 'disconnected';
+      health.warnings.push('Redis is not connected. Caching unavailable.');
+    }
+  } catch (error) {
+    health.services.redis = 'disconnected';
+    health.warnings.push('Redis not configured. Running without cache.');
+  }
+
+  // Check OpenAI API key
+  if (process.env.OPENAI_API_KEY) {
+    health.services.openai = 'configured';
+  } else {
+    health.services.openai = 'not_configured';
+    health.warnings.push('OpenAI API key not set. AI features unavailable.');
+  }
+
+  // Check JWT secret
+  if (!process.env.JWT_SECRET) {
+    health.warnings.push('JWT_SECRET not set. Authentication may fail.');
+  }
+
+  res.status(200).json(health);
 });
 
 // API Routes
@@ -87,17 +138,41 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/navigation', navigationRoutes);
 app.use('/api/user', userRoutes);
 
-// Root endpoint
+// Root endpoint with configuration status
 app.get('/', (req, res) => {
+  const configStatus = {
+    mongodb: !!process.env.MONGODB_URI,
+    redis: !!process.env.REDIS_URL,
+    openai: !!process.env.OPENAI_API_KEY,
+    jwt: !!process.env.JWT_SECRET
+  };
+
+  const missingConfigs = Object.entries(configStatus)
+    .filter(([key, value]) => !value)
+    .map(([key]) => key.toUpperCase());
+
   res.json({
     message: 'FIFA World Cup 2026 GenAI Stadium Assistant API',
     version: '1.0.0',
+    status: 'running',
+    environment: process.env.NODE_ENV || 'development',
+    configuration: {
+      status: missingConfigs.length === 0 ? 'complete' : 'incomplete',
+      missing: missingConfigs.length > 0 ? missingConfigs : undefined,
+      note: missingConfigs.length > 0 
+        ? `Missing configurations: ${missingConfigs.join(', ')}. Some features may be unavailable.`
+        : 'All configurations present'
+    },
     endpoints: {
       health: '/health',
       auth: '/api/auth',
       chat: '/api/chat',
       navigation: '/api/navigation',
       user: '/api/user'
+    },
+    docs: {
+      setup: 'See README.md for setup instructions',
+      deployment: 'See DEPLOYMENT.md for deployment guide'
     }
   });
 });
@@ -140,15 +215,33 @@ const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
-    // Connect to databases
-    await connectDB();
-    await connectRedis();
-    
-    // Start HTTP server
-    httpServer.listen(PORT, () => {
+    // Start HTTP server first (for health checks)
+    httpServer.listen(PORT, '0.0.0.0', () => {
       logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
       logger.info(`📊 Health check: http://localhost:${PORT}/health`);
     });
+
+    // Connect to databases (non-blocking, optional)
+    if (process.env.MONGODB_URI) {
+      try {
+        await connectDB();
+      } catch (error) {
+        logger.warn('MongoDB connection failed, running without database:', error.message);
+      }
+    } else {
+      logger.warn('⚠️  MONGODB_URI not set, running without database');
+    }
+
+    if (process.env.REDIS_URL) {
+      try {
+        await connectRedis();
+      } catch (error) {
+        logger.warn('Redis connection failed, running without cache:', error.message);
+      }
+    } else {
+      logger.info('ℹ️  REDIS_URL not set, running without cache');
+    }
+    
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
